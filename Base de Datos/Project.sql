@@ -1,125 +1,245 @@
--- Creación de la base de datos.
+-- Creación de la base de datos y uso de la misma.
 CREATE DATABASE IF NOT EXISTS Project;
 USE Project;
 
--- Creación de las tablas.
+-- ====================================
+-- TABLAS PRINCIPALES
+-- ====================================
+
+-- Tabla de Usuarios.
+-- Cada usuario contiene su identificador único, nombre de usuario que se utiliza como "login", correo electrónico y atributos de seguridad y rol.
 CREATE TABLE Usuarios (
     IdUsuario INT PRIMARY KEY AUTO_INCREMENT,
-    NombreUsuario NVARCHAR(16) UNIQUE NOT NULL,
-    Correo NVARCHAR(64) NOT NULL,
-    HashContraseña NVARCHAR(128) NOT NULL,
+    NombreUsuario VARCHAR(16) UNIQUE NOT NULL,
+    Correo VARCHAR(64) NOT NULL,
+    HashContraseña VARCHAR(128) NOT NULL,
     FechaRegistro DATETIME NOT NULL,
-    EstadoCuenta NVARCHAR(20) NOT NULL,
-    TipoUsuario NVARCHAR(20) NOT NULL,
-    PreferenciasPrivacidad NVARCHAR(20) NOT NULL
+    EstadoCuenta VARCHAR(20) NOT NULL,
+    TipoUsuario VARCHAR(20) NOT NULL,
+    PreferenciasPrivacidad VARCHAR(20) NOT NULL
 );
 
+-- Tabla de Perfil (relación 1:1 con Usuarios; IdPerfil = IdUsuario).
+-- La información del perfil puede contener foto, biografía y enlaces, es opcional respecto a la existencia de un Usuario.
 CREATE TABLE Perfil (
-    IdPerfil INT PRIMARY KEY AUTO_INCREMENT,
-    IdUsuario INT NOT NULL,
-    FotoPerfil NVARCHAR(256),
-    Biografia NVARCHAR(512),
-    EnlacesSociales NVARCHAR(256),
-    EnlacePersonal NVARCHAR(256),
-    FOREIGN KEY (IdUsuario) REFERENCES Usuarios(IdUsuario)
+    IdPerfil INT PRIMARY KEY,
+    FotoPerfil VARCHAR(256),
+    Biografia VARCHAR(512),
+    EnlacesSociales VARCHAR(256),
+    EnlacePersonal VARCHAR(256),
+    FOREIGN KEY (IdPerfil) REFERENCES Usuarios(IdUsuario)
 );
 
+-- Tabla de Contenido (relación 1:N con Usuarios).
+-- Un usuario (creador) puede crear varios contenidos.
 CREATE TABLE Contenido (
     IdContenido INT PRIMARY KEY AUTO_INCREMENT,
     IdAutor INT NOT NULL,
-    Título NVARCHAR (64) NOT NULL,
-    Descripción NVARCHAR (2048),
-    TipoContenido NVARCHAR (32),
-    UrlContenido NVARCHAR (256) NOT NULL,
-    FechaCreación DATETIME NOT NULL,
-    EstadoContenido NVARCHAR (20) NOT NULL,
+    Titulo VARCHAR(64) NOT NULL,
+    Descripcion VARCHAR(2048),
+    TipoContenido VARCHAR(32),
+    UrlContenido VARCHAR(256) NOT NULL,
+    FechaCreacion DATETIME NOT NULL,
+    EstadoContenido VARCHAR(20) NOT NULL,
     FOREIGN KEY (IdAutor) REFERENCES Usuarios(IdUsuario)
 );
 
-CREATE TABLE Suscripción (
-    IdSuscripción INT PRIMARY KEY AUTO_INCREMENT,
+-- Tabla de Suscripcion (relación N:1, doble relación a Usuarios).
+-- Permite gestionar suscriptores y creadores, incluyendo la información del pago.
+CREATE TABLE Suscripcion (
+    IdSuscripcion INT PRIMARY KEY AUTO_INCREMENT,
     IdSuscriptor INT NOT NULL,
     IdCreador INT NOT NULL,
     Monto DECIMAL(10,2) NOT NULL,
     FechaPago DATETIME NOT NULL,    
-    EstadoPago NVARCHAR(20) NOT NULL,
+    EstadoPago VARCHAR(20) NOT NULL,
     FOREIGN KEY (IdSuscriptor) REFERENCES Usuarios(IdUsuario),
-    FOREIGN KEY (IdCreador) REFERENCES Usuarios(IdUsuario)  
-
+    FOREIGN KEY (IdCreador) REFERENCES Usuarios(IdUsuario)
 ); 
 
+-- Tabla de Pago (relación N:1, doble relación a Usuarios).
+-- Registra los pagos realizados entre usuarios, permitiendo diferentes métodos y emisor.
 CREATE TABLE Pago (
     IdPago INT PRIMARY KEY AUTO_INCREMENT,
     IdPagador INT NOT NULL,
     IdReceptor INT NOT NULL,
     Monto DECIMAL(10,2) NOT NULL,
     FechaPago DATETIME NOT NULL,
-    EstadoPago NVARCHAR(20) NOT NULL,
-    MetodoPago NVARCHAR(32) NOT NULL,
+    EstadoPago VARCHAR(20) NOT NULL,
+    MetodoPago VARCHAR(32) NOT NULL,
     IdEmisor INT,
     FOREIGN KEY (IdPagador) REFERENCES Usuarios(IdUsuario),
     FOREIGN KEY (IdReceptor) REFERENCES Usuarios(IdUsuario)
 );
 
+-- Tabla de Mensaje (relación N:1, doble relación a Usuarios).
+-- Maneja el sistema de mensajería entre usuarios, permitiendo mensajes bidireccionales.
 CREATE TABLE Mensaje (
     IdMensaje INT PRIMARY KEY AUTO_INCREMENT,
     IdEmisor INT NOT NULL,
     IdReceptor INT NOT NULL,
-    ContenidoMensaje NVARCHAR(1024) NOT NULL,
+    ContenidoMensaje VARCHAR(1024) NOT NULL,
     FechaMensaje DATETIME NOT NULL,
-    EstadoMensaje NVARCHAR(20) NOT NULL,
+    EstadoMensaje VARCHAR(20) NOT NULL,
     FOREIGN KEY (IdEmisor) REFERENCES Usuarios(IdUsuario),
     FOREIGN KEY (IdReceptor) REFERENCES Usuarios(IdUsuario)
 );
 
-CREATE TABLE Consentimiento (
-    IdConsentimiento INT PRIMARY KEY AUTO_INCREMENT,
-    IdUsuario INT NOT NULL,
-    TipoConsentimiento NVARCHAR(64) NOT NULL,
-    FechaConsentimiento DATETIME NOT NULL,
-    DetallesConsentimiento NVARCHAR(512),
-    EstadoConsentimiento NVARCHAR(20) NOT NULL,
-    FOREIGN KEY (IdUsuario) REFERENCES Usuarios(IdUsuario)
-);
+-- ====================================
+-- VISTAS Y FUNCIONES PARA ROLES Y PERMISOS
+-- ====================================
 
--- Consultas a las tablas.
-SELECT * FROM Usuarios;
-SELECT * FROM Perfil;
-SELECT * FROM Contenido;
-SELECT * FROM Suscripción;
-SELECT * FROM Pago;
-SELECT * FROM Mensaje;
-SELECT * FROM Consentimiento;
+-- Vista Roles: mapea el tipo de usuario a su rol funcional dentro del sistema.
+CREATE OR REPLACE VIEW Roles AS
+SELECT
+    IdUsuario,
+    NombreUsuario,
+    TipoUsuario,
+    CASE
+        WHEN TipoUsuario = 'Creador' THEN 'creador de contenido'
+        WHEN TipoUsuario = 'Suscriptor' THEN 'cliente'
+        ELSE 'administrador'
+    END AS Rol
+FROM Usuarios;
 
--- Creación de los datos de pruebas.
+-- RolePermissions: define los permisos asociados a cada rol.
+CREATE OR REPLACE VIEW RolePermissions AS
+SELECT 'cliente' AS Rol,
+       1 AS can_view_content,
+       0 AS can_create_content,
+       0 AS can_manage_users,
+       0 AS can_manage_site,
+       1 AS can_pay,
+       1 AS can_message
+UNION ALL
+SELECT 'creador de contenido',
+       1,
+       1,
+       0,
+       0,
+       1,
+       1
+UNION ALL
+SELECT 'administrador',
+       1,
+       1,
+       1,
+       1,
+       1,
+       1;
 
--- Usuarios (20 registros, más atributos variados)
-INSERT INTO Usuarios (NombreUsuario, Correo, HashContraseña, FechaRegistro, EstadoCuenta, TipoUsuario, PreferenciasPrivacidad)
-VALUES 
+-- UserPermissions: combina cada usuario con los permisos correspondientes a su rol.
+CREATE OR REPLACE VIEW UserPermissions AS
+SELECT R.IdUsuario,
+       R.NombreUsuario,
+       R.TipoUsuario,
+       RP.Rol,
+       RP.can_view_content,
+       RP.can_create_content,
+       RP.can_manage_users,
+       RP.can_manage_site,
+       RP.can_pay,
+       RP.can_message
+FROM Roles R
+LEFT JOIN RolePermissions RP ON R.Rol = RP.Rol;
+
+-- Función HasPermission(userId, permisoClave): devuelve 1 si el usuario tiene el permiso solicitado para la clave, 0 en caso contrario.
+-- Permisos válidos: 'view','create','manage_users','manage_site','pay','message'
+DELIMITER //
+CREATE FUNCTION HasPermission(pUserId INT, pPerm VARCHAR(64))
+RETURNS TINYINT(1)
+DETERMINISTIC
+READS SQL DATA
+BEGIN
+    DECLARE v_result TINYINT(1) DEFAULT 0;
+    SELECT
+      CASE pPerm
+        WHEN 'view' THEN UP.can_view_content
+        WHEN 'create' THEN UP.can_create_content
+        WHEN 'manage_users' THEN UP.can_manage_users
+        WHEN 'manage_site' THEN UP.can_manage_site
+        WHEN 'pay' THEN UP.can_pay
+        WHEN 'message' THEN UP.can_message
+        ELSE 0
+      END
+    INTO v_result
+    FROM UserPermissions UP
+    WHERE UP.IdUsuario = pUserId
+    LIMIT 1;
+
+    RETURN IFNULL(v_result, 0);
+END//
+DELIMITER ;
+
+-- =========================================
+-- PROCEDIMIENTOS, TRIGGERS Y EVENTOS UTILES
+-- =========================================
+
+DELIMITER //
+
+-- Procedimiento almacenado para dar de baja lógica a un usuario (no borrado físico).
+-- Cambia el estado de la cuenta a 'Inactivo'. Puede auditarse en una tabla de auditorías si se desea registrar motivos.
+CREATE PROCEDURE DeactivateUser(IN pUserId INT, IN pReason VARCHAR(512))
+BEGIN
+    UPDATE Usuarios
+    SET EstadoCuenta = 'Inactivo'
+    WHERE IdUsuario = pUserId;
+    -- Registro de la baja puede implementarse en tabla de auditoría separada, si se requiere para histórico.
+END//
+
+-- Trigger preventivo para evitar el borrado físico de usuarios.
+-- Se exige la baja lógica por procedimiento almacenado.
+CREATE TRIGGER Usuarios_prevent_delete
+BEFORE DELETE ON Usuarios
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'DELETE no permitido en Usuarios. Use CALL DeactivateUser(id, motivo) para desactivar la cuenta.';
+END//
+
+-- Evento para caducar suscripciones pagadas hace más de un año.
+-- Debe estar habilitado el scheduler de eventos (SET GLOBAL event_scheduler = ON).
+CREATE EVENT IF NOT EXISTS ExpireOldSubscriptions
+ON SCHEDULE EVERY 1 DAY
+DO
+  UPDATE Suscripcion
+  SET EstadoPago = 'Expirado'
+  WHERE EstadoPago = 'Pagado'
+    AND FechaPago < DATE_SUB(NOW(), INTERVAL 1 YEAR);
+
+DELIMITER ;
+
+-- ====================================
+-- DATOS DE PRUEBA (INSERTS)
+-- ====================================
+
+-- Ejemplo de alta de usuarios, perfiles, contenidos, suscripciones, pagos y mensajes.
+
+-- Usuarios base de prueba (20 registros).
+INSERT INTO Usuarios (NombreUsuario, Correo, HashContraseña, FechaRegistro, EstadoCuenta, TipoUsuario, PreferenciasPrivacidad) VALUES 
 ('Alice', 'alice@email.com', SHA2('passA', 256), '2025-09-01', 'Activo', 'Creador', 'Privado'),
-('Bob', 'bob@email.com', SHA2('passB', 256), '2025-09-02', 'Activo', 'Suscriptor', 'Público'),
+('Bob', 'bob@email.com', SHA2('passB', 256), '2025-09-02', 'Activo', 'Suscriptor', 'Publico'),
 ('Carla', 'carla@email.com', SHA2('passC', 256), '2025-09-03', 'Activo', 'Creador', 'Privado'),
 ('Daniel', 'daniel@email.com', SHA2('passD', 256), '2025-09-04', 'Suspendido', 'Suscriptor', 'Privado'),
-('Eva', 'eva@email.com', SHA2('passE', 256), '2025-09-05', 'Activo', 'Creador', 'Público'),
+('Eva', 'eva@email.com', SHA2('passE', 256), '2025-09-05', 'Activo', 'Creador', 'Publico'),
 ('Frank', 'frank@email.com', SHA2('passF', 256), '2025-09-06', 'Activo', 'Suscriptor', 'Privado'),
 ('Gina', 'gina@email.com', SHA2('passG', 256), '2025-09-07', 'Activo', 'Creador', 'Privado'),
-('Hector', 'hector@email.com', SHA2('passH', 256), '2025-09-08', 'Activo', 'Suscriptor', 'Público'),
+('Hector', 'hector@email.com', SHA2('passH', 256), '2025-09-08', 'Activo', 'Suscriptor', 'Publico'),
 ('Irene', 'irene@email.com', SHA2('passI', 256), '2025-09-09', 'Activo', 'Creador', 'Privado'),
 ('Juan', 'juan@email.com', SHA2('passJ', 256), '2025-09-10', 'Activo', 'Suscriptor', 'Privado'),
-('Karla', 'karla@email.com', SHA2('passK', 256), '2025-09-11', 'Activo', 'Creador', 'Público'),
+('Karla', 'karla@email.com', SHA2('passK', 256), '2025-09-11', 'Activo', 'Creador', 'Publico'),
 ('Luis', 'luis@email.com', SHA2('passL', 256), '2025-09-12', 'Activo', 'Suscriptor', 'Privado'),
 ('Marina', 'marina@email.com', SHA2('passM', 256), '2025-09-13', 'Activo', 'Creador', 'Privado'),
-('Nicolas', 'nicolas@email.com', SHA2('passN', 256), '2025-09-14', 'Activo', 'Suscriptor', 'Público'),
+('Nicolas', 'nicolas@email.com', SHA2('passN', 256), '2025-09-14', 'Activo', 'Suscriptor', 'Publico'),
 ('Olga', 'olga@email.com', SHA2('passO', 256), '2025-09-15', 'Activo', 'Creador', 'Privado'),
 ('Pablo', 'pablo@email.com', SHA2('passP', 256), '2025-09-16', 'Activo', 'Suscriptor', 'Privado'),
-('Quique', 'quique@email.com', SHA2('passQ', 256), '2025-09-17', 'Activo', 'Creador', 'Público'),
+('Quique', 'quique@email.com', SHA2('passQ', 256), '2025-09-17', 'Activo', 'Creador', 'Publico'),
 ('Rosa', 'rosa@email.com', SHA2('passR', 256), '2025-09-18', 'Activo', 'Suscriptor', 'Privado'),
 ('Samuel', 'samuel@email.com', SHA2('passS', 256), '2025-09-19', 'Activo', 'Creador', 'Privado'),
-('Tania', 'tania@email.com', SHA2('passT', 256), '2025-09-20', 'Activo', 'Suscriptor', 'Público');
+('Tania', 'tania@email.com', SHA2('passT', 256), '2025-09-20', 'Activo', 'Suscriptor', 'Publico');
 
--- Perfiles (20 registros, con atributos variados)
-INSERT INTO Perfil (IdUsuario, FotoPerfil, Biografia, EnlacesSociales, EnlacePersonal)
-VALUES
+-- Perfiles asociados.
+INSERT INTO Perfil (IdPerfil, FotoPerfil, Biografia, EnlacesSociales, EnlacePersonal) VALUES
 (1, 'alice.jpg', 'Fotógrafa profesional', 'https://instagram.com/alice', 'https://alice.com'),
 (2, 'bob.jpg', 'Amante de la tecnología', 'https://twitter.com/bob', NULL),
 (3, 'carla.jpg', 'Escritora y bloguera', 'https://facebook.com/carla', 'https://carla.com'),
@@ -141,9 +261,8 @@ VALUES
 (19, 'samuel.jpg', 'Creador de contenido educativo', 'https://youtube.com/samuel', 'https://samuel.com'),
 (20, 'tania.jpg', 'Amante de los animales', NULL, NULL);
 
--- Contenidos (solo creadores, algunos con varios contenidos)
-INSERT INTO Contenido (IdAutor, Título, Descripción, TipoContenido, UrlContenido, FechaCreación, EstadoContenido)
-VALUES
+-- Ejemplo de contenidos.
+INSERT INTO Contenido (IdAutor, Titulo, Descripcion, TipoContenido, UrlContenido, FechaCreacion, EstadoContenido) VALUES
 (1, 'Fotografía de paisaje', 'Paisaje natural al amanecer', 'Imagen', 'https://alice.com/paisaje', '2025-09-01', 'Publicado'),
 (3, 'Artículo sobre escritura', 'Consejos para escritores', 'Artículo', 'https://carla.com/escritura', '2025-09-03', 'Publicado'),
 (5, 'Rutina de ejercicios', 'Entrenamiento para principiantes', 'Video', 'https://eva.com/ejercicio', '2025-09-05', 'Publicado'),
@@ -160,9 +279,8 @@ VALUES
 (11, 'Stream de Fortnite', 'Jugando Fortnite en vivo', 'Video', 'https://karla.com/fortnite', '2025-09-12', 'Publicado'),
 (13, 'Animación digital', 'Animación de personaje', 'Video', 'https://marina.com/animacion', '2025-09-14', 'Publicado');
 
--- Suscripciones (solo algunos usuarios suscriptores)
-INSERT INTO Suscripción (IdSuscriptor, IdCreador, Monto, FechaPago, EstadoPago)
-VALUES
+-- Ejemplo de suscripciones.
+INSERT INTO Suscripcion (IdSuscriptor, IdCreador, Monto, FechaPago, EstadoPago) VALUES
 (2, 1, 50.00, '2025-09-02', 'Pagado'),
 (4, 3, 30.00, '2025-09-04', 'Pagado'),
 (6, 5, 40.00, '2025-09-06', 'Pagado'),
@@ -174,9 +292,8 @@ VALUES
 (18, 17, 20.00, '2025-09-18', 'Pagado'),
 (20, 19, 70.00, '2025-09-20', 'Pagado');
 
--- Pagos (solo usuarios con suscripción)
-INSERT INTO Pago (IdPagador, IdReceptor, Monto, FechaPago, EstadoPago, MetodoPago, IdEmisor)
-VALUES
+-- Ejemplo de pagos.
+INSERT INTO Pago (IdPagador, IdReceptor, Monto, FechaPago, EstadoPago, MetodoPago, IdEmisor) VALUES
 (2, 1, 50.00, '2025-09-02', 'Completado', 'Tarjeta', 2),
 (4, 3, 30.00, '2025-09-04', 'Completado', 'Paypal', 4),
 (6, 5, 40.00, '2025-09-06', 'Completado', 'Tarjeta', 6),
@@ -188,50 +305,33 @@ VALUES
 (18, 17, 20.00, '2025-09-18', 'Completado', 'Tarjeta', 18),
 (20, 19, 70.00, '2025-09-20', 'Completado', 'Paypal', 20);
 
--- Mensajes (usuarios con y sin suscripción, alternando emisor/receptor)
-INSERT INTO Mensaje (IdEmisor, IdReceptor, ContenidoMensaje, FechaMensaje, EstadoMensaje)
-VALUES
-(2, 1, 'Hola Alice, me gusta tu trabajo!', '2025-09-02 10:00', 'Leído'),
-(4, 3, 'Carla, ¿cuándo publicas nuevo artículo?', '2025-09-04 11:00', 'Leído'),
-(6, 5, 'Eva, ¿tienes rutinas para principiantes?', '2025-09-06 12:00', 'Leído'),
-(8, 7, 'Gina, tu receta fue un éxito!', '2025-09-08 13:00', 'Leído'),
-(10, 9, 'Irene, ¿aceptas encargos?', '2025-09-10 14:00', 'Leído'),
-(12, 11, 'Karla, ¿harás stream hoy?', '2025-09-12 15:00', 'Leído'),
-(14, 13, 'Marina, tu arte es genial!', '2025-09-14 16:00', 'Leído'),
-(16, 15, 'Olga, ¿más tutoriales pronto?', '2025-09-16 17:00', 'Leído'),
-(18, 17, 'Quique, tus memes son los mejores!', '2025-09-18 18:00', 'Leído'),
-(20, 19, 'Samuel, ¿qué tema será el próximo video?', '2025-09-20 19:00', 'Leído'),
-(1, 2, 'Gracias por tu apoyo, Bob!', '2025-09-02 20:00', 'Leído'),
-(3, 4, '¡Pronto publicaré más!', '2025-09-04 21:00', 'Leído'),
-(5, 6, 'Sí, tengo rutinas para todos.', '2025-09-06 22:00', 'Leído'),
-(7, 8, 'Me alegra que te gustara!', '2025-09-08 23:00', 'Leído'),
-(9, 10, 'Claro, mándame detalles.', '2025-09-10 09:00', 'Leído'),
-(11, 12, 'Sí, a las 8pm!', '2025-09-12 08:00', 'Leído'),
-(13, 14, '¡Gracias por tu comentario!', '2025-09-14 07:00', 'Leído'),
-(15, 16, 'Sí, pronto más tutoriales.', '2025-09-16 06:00', 'Leído'),
-(17, 18, '¡Gracias por seguirme!', '2025-09-18 05:00', 'Leído'),
-(19, 20, 'Será sobre historia universal.', '2025-09-20 04:00', 'Leído');
+-- Ejemplo de mensajes privados.
+INSERT INTO Mensaje (IdEmisor, IdReceptor, ContenidoMensaje, FechaMensaje, EstadoMensaje) VALUES
+(2, 1, 'Hola Alice, me gusta tu trabajo!', '2025-09-02 10:00', 'Leido'),
+(4, 3, 'Carla, ¿cuándo publicas nuevo artículo?', '2025-09-04 11:00', 'Leido'),
+(6, 5, 'Eva, ¿tienes rutinas para principiantes?', '2025-09-06 12:00', 'Leido'),
+(8, 7, 'Gina, tu receta fue un éxito!', '2025-09-08 13:00', 'Leido'),
+(10, 9, 'Irene, ¿aceptas encargos?', '2025-09-10 14:00', 'Leido'),
+(12, 11, 'Karla, ¿harás stream hoy?', '2025-09-12 15:00', 'Leido'),
+(14, 13, 'Marina, tu arte es genial!', '2025-09-14 16:00', 'Leido'),
+(16, 15, 'Olga, ¿más tutoriales pronto?', '2025-09-16 17:00', 'Leido'),
+(18, 17, 'Quique, tus memes son los mejores!', '2025-09-18 18:00', 'Leido'),
+(20, 19, 'Samuel, ¿qué tema será el próximo video?', '2025-09-20 19:00', 'Leido'),
+(1, 2, 'Gracias por tu apoyo, Bob!', '2025-09-02 20:00', 'Leido'),
+(3, 4, '¡Pronto publicaré más!', '2025-09-04 21:00', 'Leido'),
+(5, 6, 'Sí, tengo rutinas para todos.', '2025-09-06 22:00', 'Leido'),
+(7, 8, 'Me alegra que te gustara!', '2025-09-08 23:00', 'Leido'),
+(9, 10, 'Claro, mándame detalles.', '2025-09-10 09:00', 'Leido'),
+(11, 12, 'Sí, a las 8pm!', '2025-09-12 08:00', 'Leido'),
+(13, 14, '¡Gracias por tu comentario!', '2025-09-14 07:00', 'Leido'),
+(15, 16, 'Sí, pronto más tutoriales.', '2025-09-16 06:00', 'Leido'),
+(17, 18, '¡Gracias por seguirme!', '2025-09-18 05:00', 'Leido'),
+(19, 20, 'Será sobre historia universal.', '2025-09-20 04:00', 'Leido');
 
--- Consentimientos (todos los usuarios, diferentes tipos)
-INSERT INTO Consentimiento (IdUsuario, TipoConsentimiento, FechaConsentimiento, DetallesConsentimiento, EstadoConsentimiento)
-VALUES
-(1, 'DatosPersonales', '2025-09-01', 'Acepta uso de datos personales.', 'Vigente'),
-(2, 'Newsletter', '2025-09-02', 'Acepta recibir boletines.', 'Vigente'),
-(3, 'Publicidad', '2025-09-03', 'Acepta recibir publicidad.', 'Vigente'),
-(4, 'DatosPersonales', '2025-09-04', 'Acepta uso de datos personales.', 'Vigente'),
-(5, 'Newsletter', '2025-09-05', 'Acepta recibir boletines.', 'Vigente'),
-(6, 'Publicidad', '2025-09-06', 'Acepta recibir publicidad.', 'Vigente'),
-(7, 'DatosPersonales', '2025-09-07', 'Acepta uso de datos personales.', 'Vigente'),
-(8, 'Newsletter', '2025-09-08', 'Acepta recibir boletines.', 'Vigente'),
-(9, 'Publicidad', '2025-09-09', 'Acepta recibir publicidad.', 'Vigente'),
-(10, 'DatosPersonales', '2025-09-10', 'Acepta uso de datos personales.', 'Vigente'),
-(11, 'Newsletter', '2025-09-11', 'Acepta recibir boletines.', 'Vigente'),
-(12, 'Publicidad', '2025-09-12', 'Acepta recibir publicidad.', 'Vigente'),
-(13, 'DatosPersonales', '2025-09-13', 'Acepta uso de datos personales.', 'Vigente'),
-(14, 'Newsletter', '2025-09-14', 'Acepta recibir boletines.', 'Vigente'),
-(15, 'Publicidad', '2025-09-15', 'Acepta recibir publicidad.', 'Vigente'),
-(16, 'DatosPersonales', '2025-09-16', 'Acepta uso de datos personales.', 'Vigente'),
-(17, 'Newsletter', '2025-09-17', 'Acepta recibir boletines.', 'Vigente'),
-(18, 'Publicidad', '2025-09-18', 'Acepta recibir publicidad.', 'Vigente'),
-(19, 'DatosPersonales', '2025-09-19', 'Acepta uso de datos personales.', 'Vigente'),
-(20, 'Newsletter', '2025-09-20', 'Acepta recibir boletines.', 'Vigente');
+-- Consultas rápidas de todas las tablas principales.
+SELECT * FROM Usuarios;
+SELECT * FROM Perfil;
+SELECT * FROM Contenido;
+SELECT * FROM Suscripcion;
+SELECT * FROM Pago;
+SELECT * FROM Mensaje;
